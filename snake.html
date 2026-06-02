@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>贪吃蛇</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Courier New', Courier, monospace;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 400px;
+    padding: 0 4px;
+  }
+  .title {
+    color: #00ff88;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(0,255,136,0.4);
+  }
+  .score {
+    color: #ff6b6b;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  .score span {
+    color: #fff;
+    font-size: 14px;
+    opacity: 0.6;
+  }
+  canvas {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+    display: block;
+  }
+  .dpad {
+    display: grid;
+    grid-template-columns: 60px 60px 60px;
+    grid-template-rows: 60px 60px 60px;
+    gap: 4px;
+    touch-action: manipulation;
+  }
+  .dpad-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.5);
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dpad-btn:active { background: rgba(0,255,136,0.15); color: #00ff88; }
+  .dpad-empty { background: transparent; border: none; }
+  .gameover-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 10;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .gameover-overlay.active { display: flex; }
+  .gameover-box {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 32px 40px;
+    text-align: center;
+  }
+  .gameover-title {
+    color: #ff6b6b;
+    font-size: 28px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .gameover-title.win { color: #00ff88; }
+  .gameover-score {
+    color: #fff;
+    font-size: 16px;
+    opacity: 0.7;
+    margin-bottom: 20px;
+  }
+  .gameover-score b { color: #ff6b6b; font-size: 24px; opacity: 1; }
+  .restart-btn {
+    background: rgba(0,255,136,0.1);
+    border: 1px solid #00ff88;
+    color: #00ff88;
+    padding: 10px 28px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .restart-btn:hover { background: rgba(0,255,136,0.2); }
+  .hint {
+    color: rgba(255,255,255,0.3);
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  @media (max-width: 440px) {
+    .header { width: 320px; }
+    canvas { width: 320px; height: 320px; }
+    .dpad { grid-template-columns: 50px 50px 50px; grid-template-rows: 50px 50px 50px; }
+    .dpad-btn { font-size: 18px; }
+    .title { font-size: 16px; }
+    .score { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="game-container">
+  <div class="header">
+    <span class="title">SNAKE</span>
+    <div class="score"><span>SCORE </span><span id="scoreValue">0</span></div>
+  </div>
+  <canvas id="game" width="400" height="400"></canvas>
+  <div class="dpad" id="dpad">
+    <div class="dpad-empty"></div>
+    <button class="dpad-btn" data-dir="up">▲</button>
+    <div class="dpad-empty"></div>
+    <button class="dpad-btn" data-dir="left">◀</button>
+    <div class="dpad-empty"></div>
+    <button class="dpad-btn" data-dir="right">▶</button>
+    <div class="dpad-empty"></div>
+    <button class="dpad-btn" data-dir="down">▼</button>
+    <div class="dpad-empty"></div>
+  </div>
+</div>
+
+<div class="gameover-overlay" id="gameoverOverlay">
+  <div class="gameover-box">
+    <div class="gameover-title" id="gameoverTitle">GAME OVER</div>
+    <div class="gameover-score">得分 <b id="gameoverScore">0</b></div>
+    <button class="restart-btn" id="restartBtn">重新开始</button>
+    <div class="hint">或按空格键重新开始</div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('scoreValue');
+const overlay = document.getElementById('gameoverOverlay');
+const gameoverTitle = document.getElementById('gameoverTitle');
+const gameoverScore = document.getElementById('gameoverScore');
+const restartBtn = document.getElementById('restartBtn');
+const dpad = document.getElementById('dpad');
+
+// ── Constants ──────────────────────────────────────────────
+const GRID = 20;
+const CELL = 20; // CSS pixels per cell at 1x
+const CANVAS_CSS = GRID * CELL; // 400
+const TICK_MS = 100;
+const DELTA_CAP = 200;
+const QUEUE_LEN = 2;
+const INITIAL_LEN = 3;
+const POINTS = 10;
+const PARTICLE_COUNT = 8;
+const PARTICLE_LIFE = 300;
+const PARTICLE_SPREAD = 15;
+
+const BG = '#1a1a2e';
+const SNAKE_COLOR = '#00ff88';
+const FOOD_COLOR = '#ff6b6b';
+const GRID_COLOR = 'rgba(255,255,255,0.03)';
+
+// ── State ──────────────────────────────────────────────────
+let snake, food, direction, score, state, particles, dirQueue, tickAccum, animId;
+let lastTime = 0;
+
+// ── Device pixel ratio ─────────────────────────────────────
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width = CANVAS_CSS * dpr;
+canvas.height = CANVAS_CSS * dpr;
+canvas.style.width = CANVAS_CSS + 'px';
+canvas.style.height = CANVAS_CSS + 'px';
+ctx.scale(dpr, dpr);
+
+// ── Helpers ────────────────────────────────────────────────
+function randomCell(exclude) {
+  const set = new Set(exclude.map(p => p.x * GRID + p.y));
+  const free = [];
+  for (let x = 0; x < GRID; x++) {
+    for (let y = 0; y < GRID; y++) {
+      if (!set.has(x * GRID + y)) free.push({ x, y });
+    }
+  }
+  if (free.length === 0) return null;
+  return free[Math.floor(Math.random() * free.length)];
+}
+
+function isOpposite(a, b) {
+  return (a === 'up' && b === 'down') || (a === 'down' && b === 'up') ||
+         (a === 'left' && b === 'right') || (a === 'right' && b === 'left');
+}
+
+// ── Init / Reset ───────────────────────────────────────────
+function init() {
+  const cx = Math.floor(GRID / 2);
+  const cy = Math.floor(GRID / 2);
+  snake = [];
+  for (let i = 0; i < INITIAL_LEN; i++) {
+    snake.push({ x: cx - i, y: cy });
+  }
+  direction = 'right';
+  dirQueue = [];
+  score = 0;
+  state = 'waiting';
+  particles = [];
+  tickAccum = 0;
+  lastTime = 0;
+  food = randomCell(snake) || { x: 5, y: 5 };
+  scoreEl.textContent = '0';
+  overlay.classList.remove('active');
+}
+
+// ── Update ─────────────────────────────────────────────────
+function update() {
+  // Process direction queue
+  while (dirQueue.length > 0) {
+    const nd = dirQueue.shift();
+    const lastDir = dirQueue.length > 0 ? dirQueue[dirQueue.length - 1] : direction;
+    if (!isOpposite(nd, lastDir)) {
+      direction = nd;
+      break;
+    }
+  }
+
+  // Move head
+  const head = { ...snake[0] };
+  switch (direction) {
+    case 'up': head.y--; break;
+    case 'down': head.y++; break;
+    case 'left': head.x--; break;
+    case 'right': head.x++; break;
+  }
+
+  // Wall collision
+  if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) {
+    endGame(false);
+    return;
+  }
+
+  // Self collision
+  if (snake.some(s => s.x === head.x && s.y === head.y)) {
+    endGame(false);
+    return;
+  }
+
+  snake.unshift(head);
+
+  // Food check
+  if (head.x === food.x && head.y === food.y) {
+    score += POINTS;
+    scoreEl.textContent = score;
+    spawnParticles(food.x, food.y);
+    const newFood = randomCell(snake);
+    if (!newFood) {
+      endGame(true);
+      return;
+    }
+    food = newFood;
+  } else {
+    snake.pop();
+  }
+}
+
+// ── Particles ──────────────────────────────────────────────
+function spawnParticles(gx, gy) {
+  const cx = gx * CELL + CELL / 2;
+  const cy = gy * CELL + CELL / 2;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 20 + Math.random() * 40;
+    const ox = (Math.random() - 0.5) * PARTICLE_SPREAD * 2;
+    const oy = (Math.random() - 0.5) * PARTICLE_SPREAD * 2;
+    particles.push({
+      x: cx + ox, y: cy + oy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: PARTICLE_LIFE,
+      maxLife: PARTICLE_LIFE,
+      size: 2 + Math.random() * 3
+    });
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * (dt / 1000);
+    p.y += p.vy * (dt / 1000);
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// ── End Game ───────────────────────────────────────────────
+function endGame(won) {
+  state = won ? 'win' : 'gameover';
+  gameoverTitle.textContent = won ? 'YOU WIN!' : 'GAME OVER';
+  gameoverTitle.className = won ? 'gameover-title win' : 'gameover-title';
+  gameoverScore.textContent = score;
+  overlay.classList.add('active');
+}
+
+// ── Draw ───────────────────────────────────────────────────
+function draw() {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, CANVAS_CSS, CANVAS_CSS);
+
+  // Grid
+  ctx.strokeStyle = GRID_COLOR;
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= CANVAS_CSS; x += CELL) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_CSS); ctx.stroke();
+  }
+  for (let y = 0; y <= CANVAS_CSS; y += CELL) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_CSS, y); ctx.stroke();
+  }
+
+  // Food glow
+  ctx.save();
+  ctx.shadowColor = FOOD_COLOR;
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = FOOD_COLOR;
+  ctx.beginPath();
+  ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL / 2 - 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Snake
+  ctx.save();
+  ctx.shadowColor = SNAKE_COLOR;
+  ctx.shadowBlur = 10;
+  for (let i = 0; i < snake.length; i++) {
+    const s = snake[i];
+    const alpha = 1 - (i / (snake.length + 8)) * 0.5;
+    ctx.fillStyle = i === 0
+      ? `rgba(0,255,136,1)`
+      : `rgba(0,255,136,${alpha.toFixed(2)})`;
+    const pad = i === 0 ? 1 : 2;
+    const radius = i === 0 ? 4 : 3;
+    const rx = s.x * CELL + pad, ry = s.y * CELL + pad;
+    const rw = CELL - pad * 2, rh = CELL - pad * 2;
+    ctx.beginPath();
+    ctx.moveTo(rx + radius, ry);
+    ctx.lineTo(rx + rw - radius, ry);
+    ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + radius);
+    ctx.lineTo(rx + rw, ry + rh - radius);
+    ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - radius, ry + rh);
+    ctx.lineTo(rx + radius, ry + rh);
+    ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - radius);
+    ctx.lineTo(rx, ry + radius);
+    ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Eyes on head
+  if (snake.length > 0) {
+    const h = snake[0];
+    const hx = h.x * CELL + CELL / 2, hy = h.y * CELL + CELL / 2;
+    let e1x, e1y, e2x, e2y;
+    const off = 4;
+    switch (direction) {
+      case 'up':    e1x = hx - off; e1y = hy - 3; e2x = hx + off; e2y = hy - 3; break;
+      case 'down':  e1x = hx - off; e1y = hy + 3; e2x = hx + off; e2y = hy + 3; break;
+      case 'left':  e1x = hx - 3; e1y = hy - off; e2x = hx - 3; e2y = hy + off; break;
+      case 'right': e1x = hx + 3; e1y = hy - off; e2x = hx + 3; e2y = hy + off; break;
+    }
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath(); ctx.arc(e1x, e1y, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e2x, e2y, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = FOOD_COLOR;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Waiting hint on canvas
+  if (state === 'waiting') {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '14px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('按方向键或 WASD 开始', CANVAS_CSS / 2, CANVAS_CSS / 2 - 20);
+    ctx.fillText('Press arrow keys or WASD to start', CANVAS_CSS / 2, CANVAS_CSS / 2 + 4);
+  }
+}
+
+// ── Game Loop ──────────────────────────────────────────────
+function gameLoop(timestamp) {
+  animId = requestAnimationFrame(gameLoop);
+
+  if (lastTime === 0) lastTime = timestamp;
+  let dt = timestamp - lastTime;
+  lastTime = timestamp;
+
+  if (dt > DELTA_CAP) dt = DELTA_CAP;
+
+  // Update particles per-frame for smooth animation
+  updateParticles(dt);
+
+  if (state === 'waiting') {
+    draw();
+    return;
+  }
+
+  if (state === 'gameover' || state === 'win') {
+    draw();
+    return;
+  }
+
+  tickAccum += dt;
+  while (tickAccum >= TICK_MS) {
+    tickAccum -= TICK_MS;
+    update();
+    if (state === 'gameover' || state === 'win') {
+      draw();
+      return;
+    }
+  }
+
+  draw();
+}
+
+// ── Input ──────────────────────────────────────────────────
+function changeDir(nd) {
+  if (state === 'waiting') {
+    // Start the game on first input
+    direction = nd;
+    state = 'playing';
+    lastTime = performance.now();
+    tickAccum = 0;
+    return;
+  }
+  if (state !== 'playing') return;
+  // Enqueue if there's room
+  if (dirQueue.length < QUEUE_LEN) {
+    dirQueue.push(nd);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  const keyMap = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', W: 'up', s: 'down', S: 'down', a: 'left', A: 'left', d: 'right', D: 'right',
+  };
+  const dir = keyMap[e.key];
+  if (dir) {
+    e.preventDefault();
+    changeDir(dir);
+  }
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    restart();
+  }
+});
+
+// Touch d-pad with delegated listener
+function getDpadDir(touch) {
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  if (!el) return null;
+  return el.dataset.dir || null;
+}
+
+dpad.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const dir = getDpadDir(t);
+    if (dir) changeDir(dir);
+  }
+}, { passive: false });
+
+dpad.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const dir = getDpadDir(t);
+    if (dir) changeDir(dir);
+  }
+}, { passive: false });
+
+// Click fallback for desktop mouse
+dpad.addEventListener('mousedown', e => {
+  const btn = e.target.closest('.dpad-btn');
+  if (btn && btn.dataset.dir) changeDir(btn.dataset.dir);
+});
+
+// Restart
+restartBtn.addEventListener('click', restart);
+overlay.addEventListener('click', e => {
+  if (e.target === overlay) restart();
+});
+
+function restart() {
+  if (animId) cancelAnimationFrame(animId);
+  init();
+  lastTime = 0;
+  tickAccum = 0;
+  animId = requestAnimationFrame(gameLoop);
+}
+
+// ── Tab visibility ─────────────────────────────────────────
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    lastTime = 0; // reset frame timer on resume to prevent time-warp; tickAccum is preserved
+  }
+});
+
+// ── Start ──────────────────────────────────────────────────
+init();
+lastTime = 0;
+animId = requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
